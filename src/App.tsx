@@ -35,7 +35,8 @@ import {
   UserCircle,
   Edit3,
   Lock,
-  LogOut
+  LogOut,
+  Hash
 } from 'lucide-react';
 
 // --- Firebase Configuration ---
@@ -48,6 +49,7 @@ const firebaseConfig = {
   messagingSenderId: "254611067252",
   appId: "1:254611067252:web:30bc519997efe0d0455c21"
 }; 
+
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
@@ -70,6 +72,7 @@ interface Transaction {
 interface Product {
   id: string;
   name: string;
+  code: string; // 商品コード (000-000形式)
 }
 
 // --- Helper Functions ---
@@ -208,6 +211,8 @@ export default function InventoryApp() {
 
   // Product Management
   const [newProductName, setNewProductName] = useState('');
+  const [newProductCodeMain, setNewProductCodeMain] = useState(''); // 商品コード主番
+  const [newProductCodeSub, setNewProductCodeSub] = useState(''); // 商品コード枝番
 
   // --- Auth Check ---
   useEffect(() => {
@@ -238,8 +243,23 @@ export default function InventoryApp() {
     // 2. Products
     const qProd = query(collection(db, 'artifacts', appId, 'public', 'data', 'products'));
     const unsubProd = onSnapshot(qProd, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, name: doc.data().name })) as Product[];
-      data.sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+      const data = snapshot.docs.map(doc => {
+        const d = doc.data();
+        return { 
+          id: doc.id, 
+          name: d.name,
+          code: d.code || '' // 商品コード（ない場合は空文字）
+        };
+      }) as Product[];
+      
+      // 商品コード順にソート (コードがないものは最後に)
+      data.sort((a, b) => {
+        const codeA = a.code || '999999';
+        const codeB = b.code || '999999';
+        if (codeA !== codeB) return codeA.localeCompare(codeB);
+        return a.name.localeCompare(b.name, 'ja');
+      });
+      
       setProducts(data);
       
       if (data.length > 0 && !selectedProduct) {
@@ -301,11 +321,24 @@ export default function InventoryApp() {
   const handleAddProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newProductName.trim()) return;
+    
+    // コードの整形 (例: 001-001)
+    // 入力がない場合は空文字
+    let fullCode = '';
+    if (newProductCodeMain || newProductCodeSub) {
+      const codeMain = newProductCodeMain.padStart(3, '0');
+      const codeSub = newProductCodeSub.padStart(3, '0');
+      fullCode = `${codeMain}-${codeSub}`;
+    }
+
     await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'products'), {
         name: newProductName.trim(),
+        code: fullCode,
         created: serverTimestamp()
     });
     setNewProductName('');
+    setNewProductCodeMain('');
+    setNewProductCodeSub('');
     alert("商品を追加しました");
   };
 
@@ -505,7 +538,11 @@ export default function InventoryApp() {
                                 onChange={e => setSelectedProduct(e.target.value)}
                                 className="w-full p-6 bg-blue-50 rounded-2xl text-5xl font-bold text-gray-900 border-4 border-blue-100 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-200 transition-all appearance-none shadow-sm h-32"
                             >
-                                {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                {products.map(p => (
+                                  <option key={p.id} value={p.id}>
+                                    {p.code ? `${p.code} ${p.name}` : p.name}
+                                  </option>
+                                ))}
                             </select>
                             <div className="absolute right-8 top-1/2 transform -translate-y-1/2 pointer-events-none text-blue-400">
                                 ▼
@@ -551,7 +588,7 @@ export default function InventoryApp() {
           </div>
         )}
 
-        {/* FLOW TAB */}
+        {/* FLOW TAB (Matrix View) */}
         {activeTab === 'flow' && (
           <div className="bg-white rounded-xl shadow-lg p-6">
             <h2 className="text-lg font-bold mb-4 flex items-center gap-2 text-gray-700">
@@ -561,7 +598,7 @@ export default function InventoryApp() {
                 <table className="w-full text-left text-sm border-collapse whitespace-nowrap">
                     <thead className="bg-gray-100 text-gray-600">
                         <tr>
-                            <th className="p-3 border sticky left-0 bg-gray-100 z-10 w-40 shadow-sm">商品名 \ 日付</th>
+                            <th className="p-3 border sticky left-0 bg-gray-100 z-10 w-60 shadow-sm">商品コード/名 \ 日付</th>
                             {matrixData.dates.map(date => (
                                 <th key={date} className="p-3 border text-center font-mono min-w-[100px]">{date}</th>
                             ))}
@@ -570,7 +607,12 @@ export default function InventoryApp() {
                     <tbody>
                         {products.map(p => (
                             <tr key={p.id} className="hover:bg-gray-50">
-                                <td className="p-3 border font-bold sticky left-0 bg-white z-10 shadow-sm">{p.name}</td>
+                                <td className="p-3 border font-bold sticky left-0 bg-white z-10 shadow-sm">
+                                  <div className="flex flex-col">
+                                    <span className="text-xs text-gray-500">{p.code}</span>
+                                    <span>{p.name}</span>
+                                  </div>
+                                </td>
                                 {matrixData.dates.map(date => {
                                     const val = matrixData.flowMap[date]?.[p.id] || 0;
                                     const formattedVal = formatFlowValue(val);
@@ -589,7 +631,7 @@ export default function InventoryApp() {
           </div>
         )}
 
-        {/* STOCK TAB */}
+        {/* STOCK TAB (Matrix View) */}
         {activeTab === 'stock' && (
           <div className="bg-white rounded-xl shadow-lg p-6">
             <h2 className="text-lg font-bold mb-4 flex items-center gap-2 text-gray-700">
@@ -599,7 +641,7 @@ export default function InventoryApp() {
                 <table className="w-full text-left text-sm border-collapse whitespace-nowrap">
                     <thead className="bg-gray-100 text-gray-600">
                         <tr>
-                            <th className="p-3 border sticky left-0 bg-gray-100 z-10 w-40 shadow-sm">商品名 \ 日付</th>
+                            <th className="p-3 border sticky left-0 bg-gray-100 z-10 w-60 shadow-sm">商品コード/名 \ 日付</th>
                             {matrixData.dates.map(date => (
                                 <th key={date} className="p-3 border text-center font-mono min-w-[100px]">{date}</th>
                             ))}
@@ -608,7 +650,12 @@ export default function InventoryApp() {
                     <tbody>
                         {products.map(p => (
                             <tr key={p.id} className="hover:bg-gray-50">
-                                <td className="p-3 border font-bold sticky left-0 bg-white z-10 shadow-sm">{p.name}</td>
+                                <td className="p-3 border font-bold sticky left-0 bg-white z-10 shadow-sm">
+                                  <div className="flex flex-col">
+                                    <span className="text-xs text-gray-500">{p.code}</span>
+                                    <span>{p.name}</span>
+                                  </div>
+                                </td>
                                 {matrixData.dates.map(date => {
                                     const val = matrixData.stockMap[date]?.[p.id] || 0;
                                     return (
@@ -673,7 +720,7 @@ export default function InventoryApp() {
                     <table className="w-full text-left text-sm border-collapse">
                         <thead className="bg-blue-50 text-blue-800">
                             <tr>
-                                <th className="p-2 border">商品名</th>
+                                <th className="p-2 border">商品コード/名</th>
                                 <th className="p-2 border text-right">1-10日</th>
                                 <th className="p-2 border text-right">11-20日</th>
                                 <th className="p-2 border text-right">21-末日</th>
@@ -689,7 +736,12 @@ export default function InventoryApp() {
                                 const amount = totalQty * globalUnitPrice;
                                 return (
                                     <tr key={p.id} className="hover:bg-gray-50">
-                                        <td className="p-2 border font-bold">{p.name}</td>
+                                        <td className="p-2 border font-bold">
+                                          <div className="flex flex-col">
+                                            <span className="text-xs text-gray-500 font-normal">{p.code}</span>
+                                            <span>{p.name}</span>
+                                          </div>
+                                        </td>
                                         <td className="p-2 border text-right">{d.term1}</td>
                                         <td className="p-2 border text-right">{d.term2}</td>
                                         <td className="p-2 border text-right">{d.term3}</td>
@@ -728,16 +780,53 @@ export default function InventoryApp() {
                     <Settings className="text-blue-600" /> 商品マスター
                 </h2>
                 
-                <form onSubmit={handleAddProduct} className="flex gap-2 mb-6">
-                    <input type="text" placeholder="商品名 (例: 商品A)" className="flex-1 p-3 border rounded-lg"
-                        value={newProductName} onChange={e => setNewProductName(e.target.value)} required />
-                    <button type="submit" className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold whitespace-nowrap">追加</button>
+                <form onSubmit={handleAddProduct} className="flex flex-col gap-4 mb-8 bg-blue-50 p-4 rounded-xl border border-blue-100">
+                    <div className="flex flex-col md:flex-row gap-2">
+                        <div className="flex flex-1 gap-2 items-center">
+                            <Hash size={20} className="text-gray-400" />
+                            <input 
+                                type="text" 
+                                placeholder="001" 
+                                className="w-16 p-3 border rounded-lg text-center"
+                                value={newProductCodeMain} 
+                                onChange={e => setNewProductCodeMain(e.target.value)} 
+                                maxLength={3}
+                            />
+                            <span className="text-gray-400">-</span>
+                            <input 
+                                type="text" 
+                                placeholder="001" 
+                                className="w-16 p-3 border rounded-lg text-center"
+                                value={newProductCodeSub} 
+                                onChange={e => setNewProductCodeSub(e.target.value)} 
+                                maxLength={3}
+                            />
+                        </div>
+                        <input 
+                            type="text" 
+                            placeholder="商品名 (例: 商品A)" 
+                            className="flex-[2] p-3 border rounded-lg"
+                            value={newProductName} 
+                            onChange={e => setNewProductName(e.target.value)} 
+                            required 
+                        />
+                    </div>
+                    <button type="submit" className="bg-blue-600 text-white px-6 py-3 rounded-lg font-bold w-full md:w-auto self-end flex items-center justify-center gap-2">
+                        <PlusCircle size={20} />
+                        商品を追加
+                    </button>
                 </form>
 
-                <div className="border rounded-lg divide-y">
+                <div className="border rounded-lg divide-y bg-white">
+                    <div className="bg-gray-50 p-3 text-xs font-bold text-gray-500 flex">
+                        <span className="w-24">コード</span>
+                        <span className="flex-1">商品名</span>
+                        <span className="w-10"></span>
+                    </div>
                     {products.map(p => (
-                        <div key={p.id} className="p-4 flex justify-between items-center">
-                            <span className="font-bold text-lg">{p.name}</span>
+                        <div key={p.id} className="p-4 flex items-center hover:bg-gray-50">
+                            <span className="w-24 font-mono font-bold text-blue-600">{p.code || '---'}</span>
+                            <span className="flex-1 font-bold text-lg">{p.name}</span>
                             <button 
                                 onClick={() => handleDeleteProduct(p.id, p.name)} 
                                 className="text-red-400 hover:text-red-600 bg-red-50 p-2 rounded-full hover:bg-red-100 transition-colors"
@@ -747,7 +836,7 @@ export default function InventoryApp() {
                             </button>
                         </div>
                     ))}
-                    {products.length === 0 && <p className="p-4 text-center text-gray-400">商品がありません</p>}
+                    {products.length === 0 && <p className="p-8 text-center text-gray-400">商品がありません</p>}
                 </div>
             </div>
         )}
