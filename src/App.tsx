@@ -2,10 +2,11 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
 import { 
   getAuth, 
-  signInAnonymously, 
   onAuthStateChanged, 
   User,
-  signInWithCustomToken
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut
 } from 'firebase/auth';
 import { 
   getFirestore, 
@@ -16,8 +17,7 @@ import {
   serverTimestamp, 
   deleteDoc,
   doc,
-  setDoc,
-  getDoc
+  setDoc
 } from 'firebase/firestore';
 import { 
   PlusCircle, 
@@ -33,10 +33,13 @@ import {
   Settings,
   ShieldCheck,
   UserCircle,
-  Edit3
+  Edit3,
+  Lock,
+  LogOut
 } from 'lucide-react';
 
 // --- Firebase Configuration ---
+// ★重要★: ここの設定をご自身のFirebaseのものに書き換えてください
 const firebaseConfig = {
   apiKey: "AIzaSyCs_caRUymWCM-ZJqb3RUayy10ZYNw6S2E",
   authDomain: "hs-tsu-kan.firebaseapp.com",
@@ -80,15 +83,116 @@ const formatCurrency = (val: number) => {
   return `¥${val.toLocaleString()}`;
 };
 
+// --- Login Component (新規追加) ---
+const LoginScreen = () => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [isLogin, setIsLogin] = useState(true);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    try {
+      if (isLogin) {
+        await signInWithEmailAndPassword(auth, email, password);
+      } else {
+        await createUserWithEmailAndPassword(auth, email, password);
+      }
+    } catch (err: any) {
+      console.error(err);
+      // エラーメッセージの日本語化
+      if (err.code === 'auth/invalid-email') setError('メールアドレスの形式が正しくありません。');
+      else if (err.code === 'auth/user-disabled') setError('このユーザーは無効化されています。');
+      else if (err.code === 'auth/user-not-found') setError('ユーザーが見つかりません。');
+      else if (err.code === 'auth/wrong-password') setError('パスワードが間違っています。');
+      else if (err.code === 'auth/email-already-in-use') setError('このメールアドレスは既に使用されています。');
+      else if (err.code === 'auth/weak-password') setError('パスワードは6文字以上で入力してください。');
+      else if (err.code === 'auth/invalid-credential') setError('メールアドレスまたはパスワードが違います。');
+      else setError('エラーが発生しました: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4 font-sans">
+      <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border-4 border-blue-50">
+        <div className="flex justify-center mb-6 text-blue-600">
+          <div className="bg-blue-100 p-4 rounded-full">
+            <Lock size={48} />
+          </div>
+        </div>
+        <h2 className="text-2xl font-bold text-center text-gray-800 mb-2">
+          {isLogin ? '在庫管理システム' : '新規アカウント登録'}
+        </h2>
+        <p className="text-center text-gray-500 mb-8 text-sm">
+          {isLogin ? 'メールアドレスとパスワードを入力してください' : '管理者用のアカウントを作成します'}
+        </p>
+
+        {error && (
+          <div className="bg-red-50 text-red-600 p-4 rounded-lg text-sm mb-6 border border-red-200 font-bold">
+            ⚠️ {error}
+          </div>
+        )}
+
+        <form onSubmit={handleAuth} className="space-y-6">
+          <div>
+            <label className="block text-sm font-bold text-gray-700 mb-2">メールアドレス</label>
+            <input 
+              type="email" 
+              required 
+              className="w-full p-4 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-100 focus:border-blue-500 outline-none transition-all text-lg"
+              placeholder="name@company.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-bold text-gray-700 mb-2">パスワード</label>
+            <input 
+              type="password" 
+              required 
+              className="w-full p-4 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-100 focus:border-blue-500 outline-none transition-all text-lg"
+              placeholder="6文字以上"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </div>
+          
+          <button 
+            type="submit" 
+            disabled={loading}
+            className="w-full bg-blue-600 text-white font-bold py-4 rounded-xl hover:bg-blue-700 transition-colors shadow-lg disabled:bg-blue-300 text-lg"
+          >
+            {loading ? '処理中...' : (isLogin ? 'ログイン' : '登録する')}
+          </button>
+        </form>
+
+        <div className="mt-8 text-center border-t pt-6">
+          <button 
+            onClick={() => { setIsLogin(!isLogin); setError(''); }}
+            className="text-sm text-blue-600 hover:text-blue-800 font-bold underline"
+          >
+            {isLogin ? '初めての方はこちら（新規登録）' : 'ログイン画面に戻る'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // --- Main App Component ---
 export default function InventoryApp() {
   const [user, setUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'input' | 'flow' | 'stock' | 'max' | 'products'>('input');
   
   // Data State
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
   
   // Global Settings State
   const [globalUnitPrice, setGlobalUnitPrice] = useState<number>(400);
@@ -105,23 +209,11 @@ export default function InventoryApp() {
   // Product Management
   const [newProductName, setNewProductName] = useState('');
 
-  // --- Auth & Init (Anonymous Login) ---
+  // --- Auth Check ---
   useEffect(() => {
-    const initAuth = async () => {
-      try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          await signInAnonymously(auth);
-        }
-      } catch (error) {
-        console.error("Auth error:", error);
-      }
-    };
-    initAuth();
-
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
+      setAuthLoading(false);
     });
     return () => unsubscribe();
   }, []);
@@ -134,7 +226,6 @@ export default function InventoryApp() {
     const qTrans = query(collection(db, 'artifacts', appId, 'public', 'data', 'transactions'));
     const unsubTrans = onSnapshot(qTrans, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Transaction[];
-      // Sort in memory
       data.sort((a, b) => {
           if (a.date !== b.date) return b.date.localeCompare(a.date);
           const tA = a.timestamp?.seconds || 0;
@@ -142,7 +233,6 @@ export default function InventoryApp() {
           return tB - tA;
       });
       setTransactions(data);
-      setLoading(false);
     });
 
     // 2. Products
@@ -175,6 +265,12 @@ export default function InventoryApp() {
   }, [user, isUnitPriceEditing]);
 
   // --- Logic Functions ---
+
+  const handleSignOut = () => {
+    if(confirm('ログアウトしますか？')) {
+        signOut(auth);
+    }
+  };
 
   const handleTransactionSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -213,13 +309,20 @@ export default function InventoryApp() {
     alert("商品を追加しました");
   };
 
-  const handleDeleteProduct = async (id: string) => {
-      if(!confirm("商品マスターから削除しますか？")) return;
-      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'products', id));
+  // 商品削除機能
+  const handleDeleteProduct = async (id: string, name: string) => {
+      if(!confirm(`商品「${name}」を本当に削除しますか？\n\n※注意: これまでの入出庫履歴は残りますが、商品の選択肢からは消えます。`)) return;
+      
+      try {
+        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'products', id));
+      } catch (err) {
+        console.error(err);
+        alert("削除に失敗しました");
+      }
   };
 
   const handleDeleteTransaction = async (id: string) => {
-    if(!confirm("削除しますか？")) return;
+    if(!confirm("この履歴を削除しますか？")) return;
     await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', id));
   };
 
@@ -333,7 +436,11 @@ export default function InventoryApp() {
   }, [maxStockData, products, globalUnitPrice]);
 
   // --- Render ---
-  if (loading && !user) return <div className="flex h-screen items-center justify-center text-blue-600">読み込み中...</div>;
+  if (authLoading) return <div className="flex h-screen items-center justify-center text-blue-600 font-bold">起動中...</div>;
+  
+  if (!user) {
+    return <LoginScreen />;
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24 font-sans text-gray-800">
@@ -344,11 +451,16 @@ export default function InventoryApp() {
           <Package size={24} />
           在庫管理
         </h1>
-        <div className="flex items-center gap-2 opacity-75">
+        <div className="flex items-center gap-2 opacity-90">
             <UserCircle size={20} />
-            <span className="text-xs">
-              {user ? `ID: ${user.uid.slice(0, 4)}...` : 'GUEST'}
-            </span>
+            <span className="text-xs hidden sm:inline mr-2">{user.email}</span>
+            <button 
+                onClick={handleSignOut}
+                className="bg-blue-800 hover:bg-blue-900 p-2 rounded-lg transition-colors flex items-center gap-1 text-xs font-bold"
+            >
+                <LogOut size={16} />
+                ログアウト
+            </button>
         </div>
       </header>
 
@@ -439,7 +551,7 @@ export default function InventoryApp() {
           </div>
         )}
 
-        {/* FLOW TAB (Matrix View) */}
+        {/* FLOW TAB */}
         {activeTab === 'flow' && (
           <div className="bg-white rounded-xl shadow-lg p-6">
             <h2 className="text-lg font-bold mb-4 flex items-center gap-2 text-gray-700">
@@ -477,7 +589,7 @@ export default function InventoryApp() {
           </div>
         )}
 
-        {/* STOCK TAB (Matrix View) */}
+        {/* STOCK TAB */}
         {activeTab === 'stock' && (
           <div className="bg-white rounded-xl shadow-lg p-6">
             <h2 className="text-lg font-bold mb-4 flex items-center gap-2 text-gray-700">
@@ -514,11 +626,10 @@ export default function InventoryApp() {
           </div>
         )}
 
-        {/* INVOICE TAB (Updated with Global Unit Price) */}
+        {/* INVOICE TAB */}
         {activeTab === 'max' && (
            <div className="space-y-6 max-w-4xl mx-auto">
              <div className="bg-white p-4 rounded-xl shadow flex flex-wrap items-center justify-between gap-4">
-                {/* Month Picker */}
                 <div className="flex items-center gap-2">
                     <label className="font-bold text-gray-700">請求月:</label>
                     <input type="month" className="border rounded p-2 text-lg"
@@ -530,7 +641,6 @@ export default function InventoryApp() {
                     />
                 </div>
 
-                {/* Global Unit Price Setting */}
                 <div className="flex items-center gap-2 bg-blue-50 p-2 rounded border border-blue-100">
                     <label className="font-bold text-gray-700 text-sm">保管料単価 (一律):</label>
                     {isUnitPriceEditing ? (
@@ -611,7 +721,7 @@ export default function InventoryApp() {
            </div>
         )}
 
-        {/* PRODUCTS TAB (No Unit Price) */}
+        {/* PRODUCTS TAB */}
         {activeTab === 'products' && (
             <div className="bg-white rounded-xl shadow-lg p-6 animate-fade-in max-w-4xl mx-auto">
                 <h2 className="text-lg font-bold mb-6 flex items-center gap-2 text-gray-700 border-b pb-2">
@@ -628,8 +738,12 @@ export default function InventoryApp() {
                     {products.map(p => (
                         <div key={p.id} className="p-4 flex justify-between items-center">
                             <span className="font-bold text-lg">{p.name}</span>
-                            <button onClick={() => handleDeleteProduct(p.id)} className="text-red-400 hover:text-red-600">
-                                <Trash2 size={18} />
+                            <button 
+                                onClick={() => handleDeleteProduct(p.id, p.name)} 
+                                className="text-red-400 hover:text-red-600 bg-red-50 p-2 rounded-full hover:bg-red-100 transition-colors"
+                                title="削除"
+                            >
+                                <Trash2 size={20} />
                             </button>
                         </div>
                     ))}
