@@ -214,6 +214,11 @@ export default function InventoryApp() {
   const [newProductCodeMain, setNewProductCodeMain] = useState(''); // 商品コード主番
   const [newProductCodeSub, setNewProductCodeSub] = useState(''); // 商品コード枝番
 
+  // Report Date State (Shared across tabs)
+  const currentYear = new Date().getFullYear();
+  const currentMonth = new Date().getMonth() + 1;
+  const [reportDate, setReportDate] = useState({ year: currentYear, month: currentMonth });
+
   // --- Auth Check ---
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -323,7 +328,6 @@ export default function InventoryApp() {
     if (!newProductName.trim()) return;
     
     // コードの整形 (例: 001-001)
-    // 入力がない場合は空文字
     let fullCode = '';
     if (newProductCodeMain || newProductCodeSub) {
       const codeMain = newProductCodeMain.padStart(3, '0');
@@ -342,10 +346,8 @@ export default function InventoryApp() {
     alert("商品を追加しました");
   };
 
-  // 商品削除機能
   const handleDeleteProduct = async (id: string, name: string) => {
       if(!confirm(`商品「${name}」を本当に削除しますか？\n\n※注意: これまでの入出庫履歴は残りますが、商品の選択肢からは消えます。`)) return;
-      
       try {
         await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'products', id));
       } catch (err) {
@@ -372,8 +374,8 @@ export default function InventoryApp() {
       }
   };
 
-  // --- Matrix Logic ---
-  const matrixData = useMemo(() => {
+  // --- Base Matrix Data (All Time) ---
+  const allTimeMatrixData = useMemo(() => {
     const dateSet = new Set(transactions.map(t => t.date));
     const dates = Array.from(dateSet).sort();
 
@@ -408,55 +410,78 @@ export default function InventoryApp() {
         });
     });
 
-    return { dates, flowMap, stockMap, currentStock };
+    return { dates, flowMap, stockMap };
   }, [transactions, products]);
 
 
-  // --- Invoice Logic ---
-  const currentYear = new Date().getFullYear();
-  const currentMonth = new Date().getMonth() + 1;
-  const [reportDate, setReportDate] = useState({ year: currentYear, month: currentMonth });
-
-  const maxStockData = useMemo(() => {
-    const term1Start = 1; const term1End = 10;
-    const term2Start = 11; const term2End = 20;
+  // --- Monthly View Logic (Filters data for selected month) ---
+  const monthlyViewData = useMemo(() => {
     const targetPrefix = `${reportDate.year}-${String(reportDate.month).padStart(2, '0')}`;
     const daysInMonth = new Date(reportDate.year, reportDate.month, 0).getDate();
+    const dates = [];
     
+    // Calculate initial stock (balance from previous months)
+    const firstDayOfMonth = `${targetPrefix}-01`;
+    const prevDates = allTimeMatrixData.dates.filter(d => d < firstDayOfMonth);
+    
+    let lastKnownStock: Record<string, number> = {};
+    products.forEach(p => lastKnownStock[p.id] = 0);
+
+    if (prevDates.length > 0) {
+        const lastDate = prevDates[prevDates.length - 1];
+        if (allTimeMatrixData.stockMap[lastDate]) {
+            lastKnownStock = { ...allTimeMatrixData.stockMap[lastDate] };
+        }
+    }
+
+    // Generate data for every day of the selected month
+    const dataByDate: Record<string, { flow: Record<string, number>, stock: Record<string, number> }> = {};
+
+    for (let d = 1; d <= daysInMonth; d++) {
+        const dateStr = `${targetPrefix}-${String(d).padStart(2, '0')}`;
+        dates.push(dateStr);
+        
+        dataByDate[dateStr] = { flow: {}, stock: {} };
+
+        // If there's transaction data for this date, update the stock base
+        if (allTimeMatrixData.stockMap[dateStr]) {
+            lastKnownStock = { ...allTimeMatrixData.stockMap[dateStr] };
+        }
+
+        products.forEach(p => {
+            // Flow: Show only if there is activity
+            dataByDate[dateStr].flow[p.id] = allTimeMatrixData.flowMap[dateStr]?.[p.id] || 0;
+            // Stock: Show end of day stock (carry over if no activity)
+            dataByDate[dateStr].stock[p.id] = lastKnownStock[p.id] || 0;
+        });
+    }
+
+    return { dates, dataByDate };
+  }, [reportDate, allTimeMatrixData, products]);
+
+
+  // --- Max Stock / Invoice Logic ---
+  const maxStockData = useMemo(() => {
     const result: Record<string, { term1: number, term2: number, term3: number }> = {};
     products.forEach(p => { 
         result[p.id] = { term1: 0, term2: 0, term3: 0 }; 
     });
 
-    let lastKnownStock: Record<string, number> = {};
-    products.forEach(p => lastKnownStock[p.id] = 0);
+    const term1End = 10;
+    const term2End = 20;
 
-    const historyDates = matrixData.dates;
-    const firstDayOfMonth = `${targetPrefix}-01`;
-    const prevDates = historyDates.filter(d => d < firstDayOfMonth);
-    
-    if (prevDates.length > 0) {
-        const lastDate = prevDates[prevDates.length - 1];
-        if (matrixData.stockMap[lastDate]) {
-            lastKnownStock = { ...matrixData.stockMap[lastDate] };
-        }
-    }
-
-    for (let d = 1; d <= daysInMonth; d++) {
-        const dateStr = `${targetPrefix}-${String(d).padStart(2, '0')}`;
-        if (matrixData.stockMap[dateStr]) {
-            lastKnownStock = { ...matrixData.stockMap[dateStr] };
-        }
-        
+    monthlyViewData.dates.forEach(dateStr => {
+        const day = parseInt(dateStr.split('-')[2], 10);
         products.forEach(p => {
-            const qty = lastKnownStock[p.id] || 0;
-            if (d >= term1Start && d <= term1End) result[p.id].term1 = Math.max(result[p.id].term1, qty);
-            else if (d >= term2Start && d <= term2End) result[p.id].term2 = Math.max(result[p.id].term2, qty);
+            const qty = monthlyViewData.dataByDate[dateStr].stock[p.id];
+            if (day <= term1End) result[p.id].term1 = Math.max(result[p.id].term1, qty);
+            else if (day <= term2End) result[p.id].term2 = Math.max(result[p.id].term2, qty);
             else result[p.id].term3 = Math.max(result[p.id].term3, qty);
         });
-    }
+    });
+    
     return result;
-  }, [reportDate, matrixData, products]);
+  }, [monthlyViewData, products]);
 
   const invoiceTotal = useMemo(() => {
       let total = 0;
@@ -590,18 +615,32 @@ export default function InventoryApp() {
 
         {/* FLOW TAB (Matrix View) */}
         {activeTab === 'flow' && (
-          <div className="bg-white rounded-xl shadow-lg p-6">
-            <h2 className="text-lg font-bold mb-4 flex items-center gap-2 text-gray-700">
-                <List className="text-blue-600" /> 入出庫 (入荷・出荷)
-            </h2>
+          <div className="bg-white rounded-xl shadow-lg p-6 max-w-full mx-auto">
+            <div className="flex flex-wrap items-center justify-between mb-4 gap-4">
+                <h2 className="text-lg font-bold flex items-center gap-2 text-gray-700">
+                    <List className="text-blue-600" /> 入出庫 (入荷・出荷)
+                </h2>
+                <div className="flex items-center gap-2">
+                    <label className="font-bold text-gray-700 text-sm">表示月:</label>
+                    <input type="month" className="border rounded p-2"
+                        value={`${reportDate.year}-${String(reportDate.month).padStart(2, '0')}`}
+                        onChange={e => {
+                            const d = new Date(e.target.value);
+                            if(!isNaN(d.getTime())) setReportDate({ year: d.getFullYear(), month: d.getMonth() + 1 });
+                        }}
+                    />
+                </div>
+            </div>
+            
             <div className="overflow-x-auto pb-4">
                 <table className="w-full text-left text-sm border-collapse whitespace-nowrap">
                     <thead className="bg-gray-100 text-gray-600">
                         <tr>
                             <th className="p-3 border sticky left-0 bg-gray-100 z-10 w-60 shadow-sm">商品コード/名 \ 日付</th>
-                            {matrixData.dates.map(date => (
-                                <th key={date} className="p-3 border text-center font-mono min-w-[100px]">{date}</th>
-                            ))}
+                            {monthlyViewData.dates.map(date => {
+                                const day = date.split('-')[2];
+                                return <th key={date} className="p-3 border text-center font-mono min-w-[40px]">{day}</th>;
+                            })}
                         </tr>
                     </thead>
                     <tbody>
@@ -613,8 +652,8 @@ export default function InventoryApp() {
                                     <span>{p.name}</span>
                                   </div>
                                 </td>
-                                {matrixData.dates.map(date => {
-                                    const val = matrixData.flowMap[date]?.[p.id] || 0;
+                                {monthlyViewData.dates.map(date => {
+                                    const val = monthlyViewData.dataByDate[date].flow[p.id];
                                     const formattedVal = formatFlowValue(val);
                                     return (
                                         <td key={date} className={`p-3 border text-center font-mono ${val < 0 ? 'text-red-600 font-bold' : val > 0 ? 'text-blue-600' : 'text-gray-300'}`}>
@@ -626,25 +665,38 @@ export default function InventoryApp() {
                         ))}
                     </tbody>
                 </table>
-                {matrixData.dates.length === 0 && <p className="text-center p-8 text-gray-400">データがありません</p>}
             </div>
           </div>
         )}
 
         {/* STOCK TAB (Matrix View) */}
         {activeTab === 'stock' && (
-          <div className="bg-white rounded-xl shadow-lg p-6">
-            <h2 className="text-lg font-bold mb-4 flex items-center gap-2 text-gray-700">
-                <TrendingUp className="text-blue-600" /> 在庫残高表 (累積)
-            </h2>
+          <div className="bg-white rounded-xl shadow-lg p-6 max-w-full mx-auto">
+            <div className="flex flex-wrap items-center justify-between mb-4 gap-4">
+                <h2 className="text-lg font-bold flex items-center gap-2 text-gray-700">
+                    <TrendingUp className="text-blue-600" /> 在庫残高表 (累積)
+                </h2>
+                <div className="flex items-center gap-2">
+                    <label className="font-bold text-gray-700 text-sm">表示月:</label>
+                    <input type="month" className="border rounded p-2"
+                        value={`${reportDate.year}-${String(reportDate.month).padStart(2, '0')}`}
+                        onChange={e => {
+                            const d = new Date(e.target.value);
+                            if(!isNaN(d.getTime())) setReportDate({ year: d.getFullYear(), month: d.getMonth() + 1 });
+                        }}
+                    />
+                </div>
+            </div>
+
             <div className="overflow-x-auto pb-4">
                 <table className="w-full text-left text-sm border-collapse whitespace-nowrap">
                     <thead className="bg-gray-100 text-gray-600">
                         <tr>
                             <th className="p-3 border sticky left-0 bg-gray-100 z-10 w-60 shadow-sm">商品コード/名 \ 日付</th>
-                            {matrixData.dates.map(date => (
-                                <th key={date} className="p-3 border text-center font-mono min-w-[100px]">{date}</th>
-                            ))}
+                            {monthlyViewData.dates.map(date => {
+                                const day = date.split('-')[2];
+                                return <th key={date} className="p-3 border text-center font-mono min-w-[40px]">{day}</th>;
+                            })}
                         </tr>
                     </thead>
                     <tbody>
@@ -656,8 +708,8 @@ export default function InventoryApp() {
                                     <span>{p.name}</span>
                                   </div>
                                 </td>
-                                {matrixData.dates.map(date => {
-                                    const val = matrixData.stockMap[date]?.[p.id] || 0;
+                                {monthlyViewData.dates.map(date => {
+                                    const val = monthlyViewData.dataByDate[date].stock[p.id];
                                     return (
                                         <td key={date} className="p-3 border text-center font-mono font-bold text-gray-800">
                                             {val}
@@ -668,7 +720,6 @@ export default function InventoryApp() {
                         ))}
                     </tbody>
                 </table>
-                {matrixData.dates.length === 0 && <p className="text-center p-8 text-gray-400">データがありません</p>}
             </div>
           </div>
         )}
