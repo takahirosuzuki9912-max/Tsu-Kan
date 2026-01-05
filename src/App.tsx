@@ -524,7 +524,7 @@ export default function InventoryApp() {
                             required 
                             value={inputDate} 
                             onChange={e => setInputDate(e.target.value)} 
-                            className="w-full p-6 bg-blue-50 rounded-2xl text-6xl font-bold text-gray-900 border-4 border-blue-100 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-200 transition-all shadow-sm h-32" 
+                            className="w-full p-6 bg-blue-50 rounded-2xl text-4xl font-bold text-gray-900 border-4 border-blue-100 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-200 transition-all shadow-sm h-28" 
                         />
                     </div>
 
@@ -536,11 +536,11 @@ export default function InventoryApp() {
                             <select 
                                 value={selectedProduct} 
                                 onChange={e => setSelectedProduct(e.target.value)}
-                                className="w-full p-6 bg-blue-50 rounded-2xl text-5xl font-bold text-gray-900 border-4 border-blue-100 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-200 transition-all appearance-none shadow-sm h-32"
+                                className="w-full p-6 bg-blue-50 rounded-2xl text-4xl font-bold text-gray-900 border-4 border-blue-100 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-200 transition-all appearance-none shadow-sm h-28"
                             >
                                 {products.map(p => (
                                   <option key={p.id} value={p.id}>
-                                    {p.code ? `${p.code} ${p.name}` : p.name}
+                                    {p.name}
                                   </option>
                                 ))}
                             </select>
@@ -677,6 +677,7 @@ export default function InventoryApp() {
         {activeTab === 'max' && (
            <div className="space-y-6 max-w-4xl mx-auto">
              <div className="bg-white p-4 rounded-xl shadow flex flex-wrap items-center justify-between gap-4">
+                {/* Month Picker */}
                 <div className="flex items-center gap-2">
                     <label className="font-bold text-gray-700">請求月:</label>
                     <input type="month" className="border rounded p-2 text-lg"
@@ -688,6 +689,7 @@ export default function InventoryApp() {
                     />
                 </div>
 
+                {/* Global Unit Price Setting */}
                 <div className="flex items-center gap-2 bg-blue-50 p-2 rounded border border-blue-100">
                     <label className="font-bold text-gray-700 text-sm">保管料単価 (一律):</label>
                     {isUnitPriceEditing ? (
