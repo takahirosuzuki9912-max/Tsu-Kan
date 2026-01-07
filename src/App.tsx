@@ -220,7 +220,6 @@ export default function InventoryApp() {
   const currentMonth = new Date().getMonth() + 1;
   const currentDay = new Date().getDate();
   
-  // 初期表示の期を自動判定
   const getInitialTerm = () => {
     if (currentDay <= 10) return 1;
     if (currentDay <= 20) return 2;
@@ -427,7 +426,7 @@ export default function InventoryApp() {
     const daysInMonth = new Date(reportDate.year, reportDate.month, 0).getDate();
     const dates = [];
     
-    // Calculate initial stock
+    // Initial Stock Calculation (Balance from previous months)
     const firstDayOfMonth = `${targetPrefix}-01`;
     const prevDates = allTimeMatrixData.dates.filter(d => d < firstDayOfMonth);
     
@@ -446,7 +445,6 @@ export default function InventoryApp() {
     for (let d = 1; d <= daysInMonth; d++) {
         const dateStr = `${targetPrefix}-${String(d).padStart(2, '0')}`;
         
-        // Term Filter
         const day = d;
         let isTargetTerm = false;
         if (reportTerm === 1 && day >= 1 && day <= 10) isTargetTerm = true;
@@ -469,11 +467,58 @@ export default function InventoryApp() {
         });
     }
 
-    return { dates, dataByDate };
+    // --- New: Calculate Term Start/End Stocks ---
+    const startStock: Record<string, number> = {};
+    const endStock: Record<string, number> = {};
+
+    if (dates.length > 0) {
+        const termStartDateStr = dates[0];
+        const termEndDateStr = dates[dates.length - 1];
+
+        // Start Stock (End of Previous Day)
+        const startDateObj = new Date(termStartDateStr);
+        startDateObj.setDate(startDateObj.getDate() - 1);
+        const prevDateStr = startDateObj.toISOString().split('T')[0];
+
+        // End Stock (End of Term)
+        // Use logic similar to lastKnownStock to find latest record <= target date
+        const getStockAt = (targetDate: string) => {
+            const historyDates = allTimeMatrixData.dates;
+            const relevantDates = historyDates.filter(d => d <= targetDate);
+            let lastDate = null;
+            if (relevantDates.length > 0) lastDate = relevantDates[relevantDates.length - 1];
+            
+            const result: Record<string, number> = {};
+            products.forEach(p => {
+                if (lastDate && allTimeMatrixData.stockMap[lastDate]) {
+                    result[p.id] = allTimeMatrixData.stockMap[lastDate][p.id] || 0;
+                } else {
+                    result[p.id] = 0;
+                }
+            });
+            return result;
+        };
+
+        const startStockData = getStockAt(prevDateStr);
+        const endStockData = getStockAt(termEndDateStr);
+        
+        products.forEach(p => {
+            startStock[p.id] = startStockData[p.id];
+            endStock[p.id] = endStockData[p.id];
+        });
+
+    } else {
+        // No dates in term (e.g. 31st in a 30-day month for term 3?)
+        // Just fill with 0 or carry over last known stock? 
+        // For safety, 0 if no range
+        products.forEach(p => { startStock[p.id] = 0; endStock[p.id] = 0; });
+    }
+
+    return { dates, dataByDate, startStock, endStock };
   }, [reportDate, reportTerm, allTimeMatrixData, products]);
 
 
-  // --- Max Stock / Invoice Logic (Always calculates full month) ---
+  // --- Max Stock / Invoice Logic ---
   const maxStockData = useMemo(() => {
     const targetPrefix = `${reportDate.year}-${String(reportDate.month).padStart(2, '0')}`;
     const daysInMonth = new Date(reportDate.year, reportDate.month, 0).getDate();
@@ -481,7 +526,6 @@ export default function InventoryApp() {
     const result: Record<string, { term1: number, term2: number, term3: number }> = {};
     products.forEach(p => { result[p.id] = { term1: 0, term2: 0, term3: 0 }; });
 
-    // Re-calc for full month for invoicing
     const historyDates = allTimeMatrixData.dates;
     const firstDayOfMonth = `${targetPrefix}-01`;
     const prevDates = historyDates.filter(d => d < firstDayOfMonth);
@@ -640,10 +684,12 @@ export default function InventoryApp() {
                     <thead className="bg-gray-100 text-gray-600">
                         <tr>
                             <th className="p-3 border sticky left-0 bg-gray-100 z-10 w-60 shadow-sm">商品コード/名 \ 日付</th>
+                            <th className="p-3 border text-center font-bold bg-blue-50 text-blue-800 min-w-[60px]">前残</th>
                             {monthlyViewData.dates.map(date => {
                                 const day = date.split('-')[2];
                                 return <th key={date} className="p-3 border text-center font-mono min-w-[50px] font-bold text-lg">{day}</th>;
                             })}
+                            <th className="p-3 border text-center font-bold bg-blue-50 text-blue-800 min-w-[60px]">現残</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -655,6 +701,9 @@ export default function InventoryApp() {
                                     <span>{p.name}</span>
                                   </div>
                                 </td>
+                                <td className="p-3 border text-center font-mono font-bold bg-blue-50 text-gray-800 text-lg">
+                                    {monthlyViewData.startStock[p.id]}
+                                </td>
                                 {monthlyViewData.dates.map(date => {
                                     const val = monthlyViewData.dataByDate[date].flow[p.id];
                                     const formattedVal = formatFlowValue(val);
@@ -664,6 +713,9 @@ export default function InventoryApp() {
                                         </td>
                                     );
                                 })}
+                                <td className="p-3 border text-center font-mono font-bold bg-blue-50 text-gray-800 text-lg">
+                                    {monthlyViewData.endStock[p.id]}
+                                </td>
                             </tr>
                         ))}
                     </tbody>
