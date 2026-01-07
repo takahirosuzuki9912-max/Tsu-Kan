@@ -732,7 +732,7 @@ export default function InventoryApp() {
                 <table className="w-full text-left text-base border-collapse whitespace-nowrap">
                     <thead className="bg-gray-100 text-gray-600">
                         <tr>
-                            <th className="p-3 border sticky left-0 bg-gray-100 z-10 w-60 shadow-sm font-bold text-lg">商品コード/名 \ 日付</th>
+                            <th className="p-3 border sticky left-0 bg-gray-100 z-10 w-36 shadow-sm font-bold text-lg">商品コード/名</th>
                             <th className="p-3 border text-center font-bold bg-blue-50 text-blue-800 min-w-[60px] text-lg">前残</th>
                             {monthlyViewData.dates.map(date => {
                                 const day = date.split('-')[2];
@@ -808,7 +808,7 @@ export default function InventoryApp() {
                 <table className="w-full text-left text-base border-collapse whitespace-nowrap">
                     <thead className="bg-gray-100 text-gray-600">
                         <tr>
-                            <th className="p-3 border sticky left-0 bg-gray-100 z-10 w-60 shadow-sm font-bold text-lg">商品コード/名 \ 日付</th>
+                            <th className="p-3 border sticky left-0 bg-gray-100 z-10 w-36 shadow-sm font-bold text-lg">商品コード/名</th>
                             {monthlyViewData.dates.map(date => {
                                 const day = date.split('-')[2];
                                 return <th key={date} className="p-3 border text-center font-mono min-w-[50px] font-bold text-xl">{day}</th>;
