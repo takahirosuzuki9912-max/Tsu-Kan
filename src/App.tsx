@@ -43,14 +43,13 @@ import {
 
 // --- Firebase Configuration ---
 // ★重要★: ここの設定をご自身のFirebaseのものに書き換えてください
-const firebaseConfig = {
-  apiKey: "AIzaSyCs_caRUymWCM-ZJqb3RUayy10ZYNw6S2E",
-  authDomain: "hs-tsu-kan.firebaseapp.com",
-  projectId: "hs-tsu-kan",
-  storageBucket: "hs-tsu-kan.firebasestorage.app",
-  messagingSenderId: "254611067252",
-  appId: "1:254611067252:web:30bc519997efe0d0455c21"
-}; 
+const firebaseConfig = JSON.parse(__firebase_config);
+// 例:
+// const firebaseConfig = {
+//   apiKey: "AIzaSy...",
+//   authDomain: "...",
+//   ...
+// };
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -215,7 +214,7 @@ export default function InventoryApp() {
   const [newProductCodeMain, setNewProductCodeMain] = useState(''); 
   const [newProductCodeSub, setNewProductCodeSub] = useState('');
 
-  // Report State (Month & Term)
+  // Report State
   const currentYear = new Date().getFullYear();
   const currentMonth = new Date().getMonth() + 1;
   const currentDay = new Date().getDate();
@@ -426,7 +425,7 @@ export default function InventoryApp() {
     const daysInMonth = new Date(reportDate.year, reportDate.month, 0).getDate();
     const dates = [];
     
-    // Initial Stock Calculation (Balance from previous months)
+    // Initial Stock Calculation
     const firstDayOfMonth = `${targetPrefix}-01`;
     const prevDates = allTimeMatrixData.dates.filter(d => d < firstDayOfMonth);
     
@@ -467,7 +466,7 @@ export default function InventoryApp() {
         });
     }
 
-    // --- New: Calculate Term Start/End Stocks ---
+    // --- Term Start/End Stocks ---
     const startStock: Record<string, number> = {};
     const endStock: Record<string, number> = {};
 
@@ -480,8 +479,7 @@ export default function InventoryApp() {
         startDateObj.setDate(startDateObj.getDate() - 1);
         const prevDateStr = startDateObj.toISOString().split('T')[0];
 
-        // End Stock (End of Term)
-        // Use logic similar to lastKnownStock to find latest record <= target date
+        // Helper to find stock at specific date
         const getStockAt = (targetDate: string) => {
             const historyDates = allTimeMatrixData.dates;
             const relevantDates = historyDates.filter(d => d <= targetDate);
@@ -508,9 +506,6 @@ export default function InventoryApp() {
         });
 
     } else {
-        // No dates in term (e.g. 31st in a 30-day month for term 3?)
-        // Just fill with 0 or carry over last known stock? 
-        // For safety, 0 if no range
         products.forEach(p => { startStock[p.id] = 0; endStock[p.id] = 0; });
     }
 
@@ -518,7 +513,39 @@ export default function InventoryApp() {
   }, [reportDate, reportTerm, allTimeMatrixData, products]);
 
 
+  // --- Totals Calculation ---
+  const flowTotals = useMemo(() => {
+    const dates = monthlyViewData.dates;
+    const startTotal = Object.values(monthlyViewData.startStock).reduce((a, b) => a + b, 0);
+    const endTotal = Object.values(monthlyViewData.endStock).reduce((a, b) => a + b, 0);
+    
+    const dateTotals: Record<string, number> = {};
+    dates.forEach(date => {
+        let sum = 0;
+        products.forEach(p => {
+            sum += monthlyViewData.dataByDate[date].flow[p.id] || 0;
+        });
+        dateTotals[date] = sum;
+    });
+
+    return { startTotal, endTotal, dateTotals };
+  }, [monthlyViewData, products]);
+
+  const stockTotals = useMemo(() => {
+    const dates = monthlyViewData.dates;
+    const dateTotals: Record<string, number> = {};
+    dates.forEach(date => {
+        let sum = 0;
+        products.forEach(p => {
+            sum += monthlyViewData.dataByDate[date].stock[p.id] || 0;
+        });
+        dateTotals[date] = sum;
+    });
+    return { dateTotals };
+  }, [monthlyViewData, products]);
+
   // --- Max Stock / Invoice Logic ---
+  // Fix ReferenceError: Move maxStockData definition BEFORE maxStockTotals
   const maxStockData = useMemo(() => {
     const targetPrefix = `${reportDate.year}-${String(reportDate.month).padStart(2, '0')}`;
     const daysInMonth = new Date(reportDate.year, reportDate.month, 0).getDate();
@@ -558,6 +585,27 @@ export default function InventoryApp() {
     }
     return result;
   }, [reportDate, allTimeMatrixData, products]);
+
+  // Then define maxStockTotals which uses maxStockData
+  const maxStockTotals = useMemo(() => {
+    let term1Total = 0;
+    let term2Total = 0;
+    let term3Total = 0;
+    let qtyTotal = 0;
+    let amountTotal = 0;
+
+    products.forEach(p => {
+        const d = maxStockData[p.id];
+        term1Total += d.term1;
+        term2Total += d.term2;
+        term3Total += d.term3;
+        const tQty = d.term1 + d.term2 + d.term3;
+        qtyTotal += tQty;
+        amountTotal += tQty * globalUnitPrice;
+    });
+
+    return { term1Total, term2Total, term3Total, qtyTotal, amountTotal };
+  }, [maxStockData, products, globalUnitPrice]);
 
   const invoiceTotal = useMemo(() => {
       let total = 0;
@@ -680,16 +728,16 @@ export default function InventoryApp() {
             </div>
             
             <div className="overflow-x-auto pb-4">
-                <table className="w-full text-left text-sm border-collapse whitespace-nowrap">
+                <table className="w-full text-left text-base border-collapse whitespace-nowrap">
                     <thead className="bg-gray-100 text-gray-600">
                         <tr>
-                            <th className="p-3 border sticky left-0 bg-gray-100 z-10 w-60 shadow-sm">商品コード/名 \ 日付</th>
-                            <th className="p-3 border text-center font-bold bg-blue-50 text-blue-800 min-w-[60px]">前残</th>
+                            <th className="p-3 border sticky left-0 bg-gray-100 z-10 w-60 shadow-sm font-bold text-lg">商品コード/名 \ 日付</th>
+                            <th className="p-3 border text-center font-bold bg-blue-50 text-blue-800 min-w-[60px] text-lg">前残</th>
                             {monthlyViewData.dates.map(date => {
                                 const day = date.split('-')[2];
-                                return <th key={date} className="p-3 border text-center font-mono min-w-[50px] font-bold text-lg">{day}</th>;
+                                return <th key={date} className="p-3 border text-center font-mono min-w-[50px] font-bold text-xl">{day}</th>;
                             })}
-                            <th className="p-3 border text-center font-bold bg-blue-50 text-blue-800 min-w-[60px]">現残</th>
+                            <th className="p-3 border text-center font-bold bg-blue-50 text-blue-800 min-w-[60px] text-lg">現残</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -697,28 +745,40 @@ export default function InventoryApp() {
                             <tr key={p.id} className="hover:bg-gray-50">
                                 <td className="p-3 border font-bold sticky left-0 bg-white z-10 shadow-sm">
                                   <div className="flex flex-col">
-                                    <span className="text-xs text-gray-500">{p.code}</span>
-                                    <span>{p.name}</span>
+                                    <span className="text-sm text-gray-500">{p.code}</span>
+                                    <span className="text-lg">{p.name}</span>
                                   </div>
                                 </td>
-                                <td className="p-3 border text-center font-mono font-bold bg-blue-50 text-gray-800 text-lg">
+                                <td className="p-3 border text-center font-mono font-bold bg-blue-50 text-gray-800 text-xl">
                                     {monthlyViewData.startStock[p.id]}
                                 </td>
                                 {monthlyViewData.dates.map(date => {
                                     const val = monthlyViewData.dataByDate[date].flow[p.id];
                                     const formattedVal = formatFlowValue(val);
                                     return (
-                                        <td key={date} className={`p-3 border text-center font-mono text-lg ${val < 0 ? 'text-red-600 font-bold' : val > 0 ? 'text-blue-600' : 'text-gray-300'}`}>
+                                        <td key={date} className={`p-3 border text-center font-mono text-xl ${val < 0 ? 'text-red-600 font-bold' : val > 0 ? 'text-blue-600' : 'text-gray-300'}`}>
                                             {formattedVal}
                                         </td>
                                     );
                                 })}
-                                <td className="p-3 border text-center font-mono font-bold bg-blue-50 text-gray-800 text-lg">
+                                <td className="p-3 border text-center font-mono font-bold bg-blue-50 text-gray-800 text-xl">
                                     {monthlyViewData.endStock[p.id]}
                                 </td>
                             </tr>
                         ))}
                     </tbody>
+                    <tfoot className="bg-gray-100 font-bold text-gray-800">
+                        <tr>
+                            <td className="p-3 border sticky left-0 bg-gray-100 z-10 shadow-sm text-lg">合計</td>
+                            <td className="p-3 border text-center font-mono text-xl">{flowTotals.startTotal}</td>
+                            {monthlyViewData.dates.map(date => {
+                                const val = flowTotals.dateTotals[date];
+                                const formattedVal = formatFlowValue(val);
+                                return <td key={date} className={`p-3 border text-center font-mono text-xl ${val < 0 ? 'text-red-600' : 'text-blue-600'}`}>{formattedVal}</td>;
+                            })}
+                            <td className="p-3 border text-center font-mono text-xl">{flowTotals.endTotal}</td>
+                        </tr>
+                    </tfoot>
                 </table>
             </div>
           </div>
@@ -744,13 +804,13 @@ export default function InventoryApp() {
             </div>
 
             <div className="overflow-x-auto pb-4">
-                <table className="w-full text-left text-sm border-collapse whitespace-nowrap">
+                <table className="w-full text-left text-base border-collapse whitespace-nowrap">
                     <thead className="bg-gray-100 text-gray-600">
                         <tr>
-                            <th className="p-3 border sticky left-0 bg-gray-100 z-10 w-60 shadow-sm">商品コード/名 \ 日付</th>
+                            <th className="p-3 border sticky left-0 bg-gray-100 z-10 w-60 shadow-sm font-bold text-lg">商品コード/名 \ 日付</th>
                             {monthlyViewData.dates.map(date => {
                                 const day = date.split('-')[2];
-                                return <th key={date} className="p-3 border text-center font-mono min-w-[50px] font-bold text-lg">{day}</th>;
+                                return <th key={date} className="p-3 border text-center font-mono min-w-[50px] font-bold text-xl">{day}</th>;
                             })}
                         </tr>
                     </thead>
@@ -759,14 +819,14 @@ export default function InventoryApp() {
                             <tr key={p.id} className="hover:bg-gray-50">
                                 <td className="p-3 border font-bold sticky left-0 bg-white z-10 shadow-sm">
                                   <div className="flex flex-col">
-                                    <span className="text-xs text-gray-500">{p.code}</span>
-                                    <span>{p.name}</span>
+                                    <span className="text-sm text-gray-500">{p.code}</span>
+                                    <span className="text-lg">{p.name}</span>
                                   </div>
                                 </td>
                                 {monthlyViewData.dates.map(date => {
                                     const val = monthlyViewData.dataByDate[date].stock[p.id];
                                     return (
-                                        <td key={date} className="p-3 border text-center font-mono font-bold text-gray-800 text-lg">
+                                        <td key={date} className="p-3 border text-center font-mono font-bold text-gray-800 text-xl">
                                             {val}
                                         </td>
                                     );
@@ -774,6 +834,14 @@ export default function InventoryApp() {
                             </tr>
                         ))}
                     </tbody>
+                    <tfoot className="bg-gray-100 font-bold text-gray-800">
+                        <tr>
+                            <td className="p-3 border sticky left-0 bg-gray-100 z-10 shadow-sm text-lg">合計</td>
+                            {monthlyViewData.dates.map(date => (
+                                <td key={date} className="p-3 border text-center font-mono text-xl">{stockTotals.dateTotals[date]}</td>
+                            ))}
+                        </tr>
+                    </tfoot>
                 </table>
             </div>
           </div>
@@ -823,16 +891,16 @@ export default function InventoryApp() {
                     <ShieldCheck className="text-blue-600" /> 最大在庫計算・請求内訳
                 </h2>
                 <div className="overflow-x-auto">
-                    <table className="w-full text-left text-sm border-collapse">
+                    <table className="w-full text-left text-base border-collapse">
                         <thead className="bg-blue-50 text-blue-800">
                             <tr>
-                                <th className="p-2 border">商品コード/名</th>
-                                <th className="p-2 border text-right">第1期<br/>(1-10)</th>
-                                <th className="p-2 border text-right">第2期<br/>(11-20)</th>
-                                <th className="p-2 border text-right">第3期<br/>(21-末)</th>
-                                <th className="p-2 border text-right font-bold">合計数</th>
-                                <th className="p-2 border text-right">単価</th>
-                                <th className="p-2 border text-right bg-blue-100 font-bold">金額</th>
+                                <th className="p-3 border text-lg">商品コード/名</th>
+                                <th className="p-3 border text-right text-lg">第1期<br/>(1-10)</th>
+                                <th className="p-3 border text-right text-lg">第2期<br/>(11-20)</th>
+                                <th className="p-3 border text-right text-lg">第3期<br/>(21-末)</th>
+                                <th className="p-3 border text-right font-bold text-lg">合計数</th>
+                                <th className="p-3 border text-right text-lg">単価</th>
+                                <th className="p-3 border text-right bg-blue-100 font-bold text-lg">金額</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -842,24 +910,35 @@ export default function InventoryApp() {
                                 const amount = totalQty * globalUnitPrice;
                                 return (
                                     <tr key={p.id} className="hover:bg-gray-50">
-                                        <td className="p-2 border font-bold">
+                                        <td className="p-3 border font-bold">
                                           <div className="flex flex-col">
-                                            <span className="text-xs text-gray-500 font-normal">{p.code}</span>
-                                            <span>{p.name}</span>
+                                            <span className="text-sm text-gray-500 font-normal">{p.code}</span>
+                                            <span className="text-lg">{p.name}</span>
                                           </div>
                                         </td>
-                                        <td className="p-2 border text-right">{d.term1}</td>
-                                        <td className="p-2 border text-right">{d.term2}</td>
-                                        <td className="p-2 border text-right">{d.term3}</td>
-                                        <td className="p-2 border text-right font-bold">{totalQty}</td>
-                                        <td className="p-2 border text-right text-gray-600">{formatCurrency(globalUnitPrice)}</td>
-                                        <td className="p-2 border text-right font-bold bg-blue-50 text-blue-700">
+                                        <td className="p-3 border text-right text-xl">{d.term1}</td>
+                                        <td className="p-3 border text-right text-xl">{d.term2}</td>
+                                        <td className="p-3 border text-right text-xl">{d.term3}</td>
+                                        <td className="p-3 border text-right font-bold text-xl">{totalQty}</td>
+                                        <td className="p-3 border text-right text-gray-600 text-lg">{formatCurrency(globalUnitPrice)}</td>
+                                        <td className="p-3 border text-right font-bold bg-blue-50 text-blue-700 text-xl">
                                             {formatCurrency(amount)}
                                         </td>
                                     </tr>
                                 );
                             })}
                         </tbody>
+                        <tfoot className="bg-blue-100 font-bold text-blue-900">
+                            <tr>
+                                <td className="p-3 border text-lg">合計</td>
+                                <td className="p-3 border text-right text-xl">{maxStockTotals.term1Total}</td>
+                                <td className="p-3 border text-right text-xl">{maxStockTotals.term2Total}</td>
+                                <td className="p-3 border text-right text-xl">{maxStockTotals.term3Total}</td>
+                                <td className="p-3 border text-right text-xl">{maxStockTotals.qtyTotal}</td>
+                                <td className="p-3 border text-right text-lg">-</td>
+                                <td className="p-3 border text-right text-xl">{formatCurrency(maxStockTotals.amountTotal)}</td>
+                            </tr>
+                        </tfoot>
                     </table>
                 </div>
              </div>
