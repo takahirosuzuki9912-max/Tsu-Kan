@@ -43,13 +43,14 @@ import {
 
 // --- Firebase Configuration ---
 // ★重要★: ここの設定をご自身のFirebaseのものに書き換えてください
-const firebaseConfig = JSON.parse(__firebase_config);
-// 例:
-// const firebaseConfig = {
-//   apiKey: "AIzaSy...",
-//   authDomain: "...",
-//   ...
-// };
+const firebaseConfig = {
+  apiKey: "AIzaSyCs_caRUymWCM-ZJqb3RUayy10ZYNw6S2E",
+  authDomain: "hs-tsu-kan.firebaseapp.com",
+  projectId: "hs-tsu-kan",
+  storageBucket: "hs-tsu-kan.firebasestorage.app",
+  messagingSenderId: "254611067252",
+  appId: "1:254611067252:web:30bc519997efe0d0455c21"
+}; 
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
