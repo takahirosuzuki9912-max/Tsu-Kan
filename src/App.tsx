@@ -36,7 +36,9 @@ import {
   Edit3,
   Lock,
   LogOut,
-  Hash
+  Hash,
+  ChevronRight,
+  ChevronLeft
 } from 'lucide-react';
 
 // --- Firebase Configuration ---
@@ -72,7 +74,7 @@ interface Transaction {
 interface Product {
   id: string;
   name: string;
-  code: string; // 商品コード (000-000形式)
+  code: string;
 }
 
 // --- Helper Functions ---
@@ -86,7 +88,7 @@ const formatCurrency = (val: number) => {
   return `¥${val.toLocaleString()}`;
 };
 
-// --- Login Component (新規追加) ---
+// --- Login Component ---
 const LoginScreen = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -106,7 +108,6 @@ const LoginScreen = () => {
       }
     } catch (err: any) {
       console.error(err);
-      // エラーメッセージの日本語化
       if (err.code === 'auth/invalid-email') setError('メールアドレスの形式が正しくありません。');
       else if (err.code === 'auth/user-disabled') setError('このユーザーは無効化されています。');
       else if (err.code === 'auth/user-not-found') setError('ユーザーが見つかりません。');
@@ -211,13 +212,23 @@ export default function InventoryApp() {
 
   // Product Management
   const [newProductName, setNewProductName] = useState('');
-  const [newProductCodeMain, setNewProductCodeMain] = useState(''); // 商品コード主番
-  const [newProductCodeSub, setNewProductCodeSub] = useState(''); // 商品コード枝番
+  const [newProductCodeMain, setNewProductCodeMain] = useState(''); 
+  const [newProductCodeSub, setNewProductCodeSub] = useState('');
 
-  // Report Date State (Shared across tabs)
+  // Report State (Month & Term)
   const currentYear = new Date().getFullYear();
   const currentMonth = new Date().getMonth() + 1;
+  const currentDay = new Date().getDate();
+  
+  // 初期表示の期を自動判定
+  const getInitialTerm = () => {
+    if (currentDay <= 10) return 1;
+    if (currentDay <= 20) return 2;
+    return 3;
+  };
+
   const [reportDate, setReportDate] = useState({ year: currentYear, month: currentMonth });
+  const [reportTerm, setReportTerm] = useState<1 | 2 | 3>(getInitialTerm() as 1 | 2 | 3);
 
   // --- Auth Check ---
   useEffect(() => {
@@ -253,11 +264,10 @@ export default function InventoryApp() {
         return { 
           id: doc.id, 
           name: d.name,
-          code: d.code || '' // 商品コード（ない場合は空文字）
+          code: d.code || ''
         };
       }) as Product[];
       
-      // 商品コード順にソート (コードがないものは最後に)
       data.sort((a, b) => {
         const codeA = a.code || '999999';
         const codeB = b.code || '999999';
@@ -272,7 +282,7 @@ export default function InventoryApp() {
       }
     });
 
-    // 3. Global Settings (Unit Price)
+    // 3. Global Settings
     const settingsDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'config');
     const unsubSettings = onSnapshot(settingsDocRef, (docSnap) => {
         if (docSnap.exists()) {
@@ -292,9 +302,7 @@ export default function InventoryApp() {
   // --- Logic Functions ---
 
   const handleSignOut = () => {
-    if(confirm('ログアウトしますか？')) {
-        signOut(auth);
-    }
+    if(confirm('ログアウトしますか？')) signOut(auth);
   };
 
   const handleTransactionSubmit = async (e: React.FormEvent) => {
@@ -327,7 +335,6 @@ export default function InventoryApp() {
     e.preventDefault();
     if (!newProductName.trim()) return;
     
-    // コードの整形 (例: 001-001)
     let fullCode = '';
     if (newProductCodeMain || newProductCodeSub) {
       const codeMain = newProductCodeMain.padStart(3, '0');
@@ -347,7 +354,7 @@ export default function InventoryApp() {
   };
 
   const handleDeleteProduct = async (id: string, name: string) => {
-      if(!confirm(`商品「${name}」を本当に削除しますか？\n\n※注意: これまでの入出庫履歴は残りますが、商品の選択肢からは消えます。`)) return;
+      if(!confirm(`商品「${name}」を本当に削除しますか？`)) return;
       try {
         await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'products', id));
       } catch (err) {
@@ -357,7 +364,7 @@ export default function InventoryApp() {
   };
 
   const handleDeleteTransaction = async (id: string) => {
-    if(!confirm("この履歴を削除しますか？")) return;
+    if(!confirm("削除しますか？")) return;
     await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', id));
   };
 
@@ -414,13 +421,13 @@ export default function InventoryApp() {
   }, [transactions, products]);
 
 
-  // --- Monthly View Logic (Filters data for selected month) ---
+  // --- Monthly & Term View Logic ---
   const monthlyViewData = useMemo(() => {
     const targetPrefix = `${reportDate.year}-${String(reportDate.month).padStart(2, '0')}`;
     const daysInMonth = new Date(reportDate.year, reportDate.month, 0).getDate();
     const dates = [];
     
-    // Calculate initial stock (balance from previous months)
+    // Calculate initial stock
     const firstDayOfMonth = `${targetPrefix}-01`;
     const prevDates = allTimeMatrixData.dates.filter(d => d < firstDayOfMonth);
     
@@ -434,54 +441,79 @@ export default function InventoryApp() {
         }
     }
 
-    // Generate data for every day of the selected month
     const dataByDate: Record<string, { flow: Record<string, number>, stock: Record<string, number> }> = {};
 
     for (let d = 1; d <= daysInMonth; d++) {
         const dateStr = `${targetPrefix}-${String(d).padStart(2, '0')}`;
-        dates.push(dateStr);
+        
+        // Term Filter
+        const day = d;
+        let isTargetTerm = false;
+        if (reportTerm === 1 && day >= 1 && day <= 10) isTargetTerm = true;
+        if (reportTerm === 2 && day >= 11 && day <= 20) isTargetTerm = true;
+        if (reportTerm === 3 && day >= 21) isTargetTerm = true;
+
+        if (isTargetTerm) {
+            dates.push(dateStr);
+        }
         
         dataByDate[dateStr] = { flow: {}, stock: {} };
 
-        // If there's transaction data for this date, update the stock base
         if (allTimeMatrixData.stockMap[dateStr]) {
             lastKnownStock = { ...allTimeMatrixData.stockMap[dateStr] };
         }
 
         products.forEach(p => {
-            // Flow: Show only if there is activity
             dataByDate[dateStr].flow[p.id] = allTimeMatrixData.flowMap[dateStr]?.[p.id] || 0;
-            // Stock: Show end of day stock (carry over if no activity)
             dataByDate[dateStr].stock[p.id] = lastKnownStock[p.id] || 0;
         });
     }
 
     return { dates, dataByDate };
-  }, [reportDate, allTimeMatrixData, products]);
+  }, [reportDate, reportTerm, allTimeMatrixData, products]);
 
 
-  // --- Max Stock / Invoice Logic ---
+  // --- Max Stock / Invoice Logic (Always calculates full month) ---
   const maxStockData = useMemo(() => {
+    const targetPrefix = `${reportDate.year}-${String(reportDate.month).padStart(2, '0')}`;
+    const daysInMonth = new Date(reportDate.year, reportDate.month, 0).getDate();
+    
     const result: Record<string, { term1: number, term2: number, term3: number }> = {};
-    products.forEach(p => { 
-        result[p.id] = { term1: 0, term2: 0, term3: 0 }; 
-    });
+    products.forEach(p => { result[p.id] = { term1: 0, term2: 0, term3: 0 }; });
+
+    // Re-calc for full month for invoicing
+    const historyDates = allTimeMatrixData.dates;
+    const firstDayOfMonth = `${targetPrefix}-01`;
+    const prevDates = historyDates.filter(d => d < firstDayOfMonth);
+    
+    let lastKnownStock: Record<string, number> = {};
+    products.forEach(p => lastKnownStock[p.id] = 0);
+
+    if (prevDates.length > 0) {
+        const lastDate = prevDates[prevDates.length - 1];
+        if (allTimeMatrixData.stockMap[lastDate]) {
+            lastKnownStock = { ...allTimeMatrixData.stockMap[lastDate] };
+        }
+    }
 
     const term1End = 10;
     const term2End = 20;
 
-    monthlyViewData.dates.forEach(dateStr => {
-        const day = parseInt(dateStr.split('-')[2], 10);
+    for (let d = 1; d <= daysInMonth; d++) {
+        const dateStr = `${targetPrefix}-${String(d).padStart(2, '0')}`;
+        if (allTimeMatrixData.stockMap[dateStr]) {
+            lastKnownStock = { ...allTimeMatrixData.stockMap[dateStr] };
+        }
+        
         products.forEach(p => {
-            const qty = monthlyViewData.dataByDate[dateStr].stock[p.id];
-            if (day <= term1End) result[p.id].term1 = Math.max(result[p.id].term1, qty);
-            else if (day <= term2End) result[p.id].term2 = Math.max(result[p.id].term2, qty);
+            const qty = lastKnownStock[p.id] || 0;
+            if (d <= term1End) result[p.id].term1 = Math.max(result[p.id].term1, qty);
+            else if (d <= term2End) result[p.id].term2 = Math.max(result[p.id].term2, qty);
             else result[p.id].term3 = Math.max(result[p.id].term3, qty);
         });
-    });
-    
+    }
     return result;
-  }, [monthlyViewData, products]);
+  }, [reportDate, allTimeMatrixData, products]);
 
   const invoiceTotal = useMemo(() => {
       let total = 0;
@@ -493,12 +525,31 @@ export default function InventoryApp() {
       return total;
   }, [maxStockData, products, globalUnitPrice]);
 
+  // --- UI Components ---
+  const TermSelector = () => (
+    <div className="flex gap-2 w-full md:w-auto">
+      {[1, 2, 3].map((term) => (
+        <button
+          key={term}
+          onClick={() => setReportTerm(term as 1 | 2 | 3)}
+          className={`flex-1 md:flex-none py-3 px-6 rounded-xl font-bold text-lg transition-all ${
+            reportTerm === term 
+              ? 'bg-blue-600 text-white shadow-md transform scale-105' 
+              : 'bg-white text-gray-500 border-2 border-gray-200 hover:bg-gray-50'
+          }`}
+        >
+          第{term}期
+          <span className="block text-xs font-normal opacity-80">
+            {term === 1 ? '1-10日' : term === 2 ? '11-20日' : '21-末日'}
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+
   // --- Render ---
   if (authLoading) return <div className="flex h-screen items-center justify-center text-blue-600 font-bold">起動中...</div>;
-  
-  if (!user) {
-    return <LoginScreen />;
-  }
+  if (!user) return <LoginScreen />;
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24 font-sans text-gray-800">
@@ -512,13 +563,7 @@ export default function InventoryApp() {
         <div className="flex items-center gap-2 opacity-90">
             <UserCircle size={20} />
             <span className="text-xs hidden sm:inline mr-2">{user.email}</span>
-            <button 
-                onClick={handleSignOut}
-                className="bg-blue-800 hover:bg-blue-900 p-2 rounded-lg transition-colors flex items-center gap-1 text-xs font-bold"
-            >
-                <LogOut size={16} />
-                ログアウト
-            </button>
+            <button onClick={handleSignOut} className="bg-blue-800 hover:bg-blue-900 p-2 rounded-lg transition-colors flex items-center gap-1 text-xs font-bold"><LogOut size={16} /> ログアウト</button>
         </div>
       </header>
 
@@ -535,100 +580,58 @@ export default function InventoryApp() {
             {products.length === 0 ? (
                 <div className="text-center p-8 bg-yellow-50 rounded">
                     <p className="font-bold text-gray-600">商品がありません</p>
-                    <p className="text-sm text-gray-500 mt-2 mb-4">まずは「商品」タブから商品を登録してください。</p>
                     <button onClick={() => setActiveTab('products')} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold">商品登録へ移動</button>
                 </div>
             ) : (
                 <form onSubmit={handleTransactionSubmit} className="space-y-8">
                     <div>
-                        <label className="block text-2xl font-bold text-gray-700 mb-3 flex items-center gap-2">
-                            <Calendar className="text-blue-500" size={32} /> 日付
-                        </label>
-                        <input 
-                            type="date" 
-                            required 
-                            value={inputDate} 
-                            onChange={e => setInputDate(e.target.value)} 
-                            className="w-full p-6 bg-blue-50 rounded-2xl text-4xl font-bold text-gray-900 border-4 border-blue-100 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-200 transition-all shadow-sm h-28" 
-                        />
+                        <label className="block text-2xl font-bold text-gray-700 mb-3 flex items-center gap-2"><Calendar className="text-blue-500" size={32} /> 日付</label>
+                        <input type="date" required value={inputDate} onChange={e => setInputDate(e.target.value)} className="w-full p-6 bg-blue-50 rounded-2xl text-4xl font-bold text-gray-900 border-4 border-blue-100 focus:border-blue-500 focus:bg-white transition-all shadow-sm h-28" />
                     </div>
-
                     <div>
-                        <label className="block text-2xl font-bold text-gray-700 mb-3 flex items-center gap-2">
-                            <Package className="text-blue-500" size={32} /> 商品
-                        </label>
+                        <label className="block text-2xl font-bold text-gray-700 mb-3 flex items-center gap-2"><Package className="text-blue-500" size={32} /> 商品</label>
                         <div className="relative">
-                            <select 
-                                value={selectedProduct} 
-                                onChange={e => setSelectedProduct(e.target.value)}
-                                className="w-full p-6 bg-blue-50 rounded-2xl text-4xl font-bold text-gray-900 border-4 border-blue-100 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-200 transition-all appearance-none shadow-sm h-28"
-                            >
-                                {products.map(p => (
-                                  <option key={p.id} value={p.id}>
-                                    {p.name}
-                                  </option>
-                                ))}
+                            <select value={selectedProduct} onChange={e => setSelectedProduct(e.target.value)} className="w-full p-6 bg-blue-50 rounded-2xl text-4xl font-bold text-gray-900 border-4 border-blue-100 focus:border-blue-500 focus:bg-white transition-all appearance-none shadow-sm h-28">
+                                {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                             </select>
-                            <div className="absolute right-8 top-1/2 transform -translate-y-1/2 pointer-events-none text-blue-400">
-                                ▼
-                            </div>
+                            <div className="absolute right-8 top-1/2 transform -translate-y-1/2 pointer-events-none text-blue-400">▼</div>
                         </div>
                     </div>
-
                     <div>
                         <label className="block text-2xl font-bold text-gray-700 mb-3">区分</label>
                         <div className="grid grid-cols-2 gap-6">
-                            <button type="button" onClick={() => setInputType('in')}
-                                className={`p-8 rounded-2xl flex flex-col items-center gap-4 transition-all transform duration-200 ${inputType === 'in' ? 'bg-blue-600 text-white shadow-xl scale-105 ring-4 ring-blue-300' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}>
-                                <PlusCircle size={64} />
-                                <span className="font-bold text-3xl">入荷</span>
-                            </button>
-                            <button type="button" onClick={() => setInputType('out')}
-                                className={`p-8 rounded-2xl flex flex-col items-center gap-4 transition-all transform duration-200 ${inputType === 'out' ? 'bg-red-500 text-white shadow-xl scale-105 ring-4 ring-red-300' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}>
-                                <MinusCircle size={64} />
-                                <span className="font-bold text-3xl">出荷</span>
-                            </button>
+                            <button type="button" onClick={() => setInputType('in')} className={`p-8 rounded-2xl flex flex-col items-center gap-4 transition-all transform duration-200 ${inputType === 'in' ? 'bg-blue-600 text-white shadow-xl scale-105 ring-4 ring-blue-300' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}><PlusCircle size={64} /><span className="font-bold text-3xl">入荷</span></button>
+                            <button type="button" onClick={() => setInputType('out')} className={`p-8 rounded-2xl flex flex-col items-center gap-4 transition-all transform duration-200 ${inputType === 'out' ? 'bg-red-500 text-white shadow-xl scale-105 ring-4 ring-red-300' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}><MinusCircle size={64} /><span className="font-bold text-3xl">出荷</span></button>
                         </div>
                     </div>
-
                     <div>
                         <label className="block text-2xl font-bold text-gray-700 mb-3">数量</label>
-                        <input 
-                            type="number" 
-                            min="1" 
-                            required 
-                            value={inputQuantity} 
-                            onChange={e => setInputQuantity(Number(e.target.value))}
-                            className="w-full p-6 bg-gray-50 rounded-2xl text-6xl text-center font-bold border-4 border-gray-200 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-200 transition-all shadow-inner h-32" 
-                        />
+                        <input type="number" min="1" required value={inputQuantity} onChange={e => setInputQuantity(Number(e.target.value))} className="w-full p-6 bg-gray-50 rounded-2xl text-6xl text-center font-bold border-4 border-gray-200 focus:border-blue-500 focus:bg-white transition-all shadow-inner h-32" />
                     </div>
-
-                    <button type="submit" disabled={submitStatus === 'saving'}
-                        className={`w-full py-8 rounded-2xl font-bold text-3xl shadow-xl flex items-center justify-center gap-4 text-white transition-all transform duration-200 ${submitStatus === 'success' ? 'bg-green-500 scale-95' : 'bg-blue-600 hover:bg-blue-700 active:scale-95'}`}>
-                        {submitStatus === 'saving' ? '送信中...' : submitStatus === 'success' ? '完了！' : '記録する'}
-                        <Save size={36} />
+                    <button type="submit" disabled={submitStatus === 'saving'} className={`w-full py-8 rounded-2xl font-bold text-3xl shadow-xl flex items-center justify-center gap-4 text-white transition-all transform duration-200 ${submitStatus === 'success' ? 'bg-green-500 scale-95' : 'bg-blue-600 hover:bg-blue-700 active:scale-95'}`}>
+                        {submitStatus === 'saving' ? '送信中...' : submitStatus === 'success' ? '完了！' : '記録する'} <Save size={36} />
                     </button>
                 </form>
             )}
           </div>
         )}
 
-        {/* FLOW TAB (Matrix View) */}
+        {/* FLOW TAB */}
         {activeTab === 'flow' && (
           <div className="bg-white rounded-xl shadow-lg p-6 max-w-full mx-auto">
-            <div className="flex flex-wrap items-center justify-between mb-4 gap-4">
-                <h2 className="text-lg font-bold flex items-center gap-2 text-gray-700">
-                    <List className="text-blue-600" /> 入出庫 (入荷・出荷)
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-6 gap-4 border-b pb-4">
+                <h2 className="text-xl font-bold flex items-center gap-2 text-gray-700 whitespace-nowrap">
+                    <List className="text-blue-600" size={28} /> 入出庫
                 </h2>
-                <div className="flex items-center gap-2">
-                    <label className="font-bold text-gray-700 text-sm">表示月:</label>
-                    <input type="month" className="border rounded p-2"
+                <div className="flex flex-col md:flex-row gap-4 w-full md:w-auto">
+                    <input type="month" className="border-2 border-gray-200 rounded-xl p-3 text-xl font-bold text-gray-700"
                         value={`${reportDate.year}-${String(reportDate.month).padStart(2, '0')}`}
                         onChange={e => {
                             const d = new Date(e.target.value);
                             if(!isNaN(d.getTime())) setReportDate({ year: d.getFullYear(), month: d.getMonth() + 1 });
                         }}
                     />
+                    <TermSelector />
                 </div>
             </div>
             
@@ -639,7 +642,7 @@ export default function InventoryApp() {
                             <th className="p-3 border sticky left-0 bg-gray-100 z-10 w-60 shadow-sm">商品コード/名 \ 日付</th>
                             {monthlyViewData.dates.map(date => {
                                 const day = date.split('-')[2];
-                                return <th key={date} className="p-3 border text-center font-mono min-w-[40px]">{day}</th>;
+                                return <th key={date} className="p-3 border text-center font-mono min-w-[50px] font-bold text-lg">{day}</th>;
                             })}
                         </tr>
                     </thead>
@@ -656,7 +659,7 @@ export default function InventoryApp() {
                                     const val = monthlyViewData.dataByDate[date].flow[p.id];
                                     const formattedVal = formatFlowValue(val);
                                     return (
-                                        <td key={date} className={`p-3 border text-center font-mono ${val < 0 ? 'text-red-600 font-bold' : val > 0 ? 'text-blue-600' : 'text-gray-300'}`}>
+                                        <td key={date} className={`p-3 border text-center font-mono text-lg ${val < 0 ? 'text-red-600 font-bold' : val > 0 ? 'text-blue-600' : 'text-gray-300'}`}>
                                             {formattedVal}
                                         </td>
                                     );
@@ -669,22 +672,22 @@ export default function InventoryApp() {
           </div>
         )}
 
-        {/* STOCK TAB (Matrix View) */}
+        {/* STOCK TAB */}
         {activeTab === 'stock' && (
           <div className="bg-white rounded-xl shadow-lg p-6 max-w-full mx-auto">
-            <div className="flex flex-wrap items-center justify-between mb-4 gap-4">
-                <h2 className="text-lg font-bold flex items-center gap-2 text-gray-700">
-                    <TrendingUp className="text-blue-600" /> 在庫残高表 (累積)
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-6 gap-4 border-b pb-4">
+                <h2 className="text-xl font-bold flex items-center gap-2 text-gray-700 whitespace-nowrap">
+                    <TrendingUp className="text-blue-600" size={28} /> 在庫残高
                 </h2>
-                <div className="flex items-center gap-2">
-                    <label className="font-bold text-gray-700 text-sm">表示月:</label>
-                    <input type="month" className="border rounded p-2"
+                <div className="flex flex-col md:flex-row gap-4 w-full md:w-auto">
+                    <input type="month" className="border-2 border-gray-200 rounded-xl p-3 text-xl font-bold text-gray-700"
                         value={`${reportDate.year}-${String(reportDate.month).padStart(2, '0')}`}
                         onChange={e => {
                             const d = new Date(e.target.value);
                             if(!isNaN(d.getTime())) setReportDate({ year: d.getFullYear(), month: d.getMonth() + 1 });
                         }}
                     />
+                    <TermSelector />
                 </div>
             </div>
 
@@ -695,7 +698,7 @@ export default function InventoryApp() {
                             <th className="p-3 border sticky left-0 bg-gray-100 z-10 w-60 shadow-sm">商品コード/名 \ 日付</th>
                             {monthlyViewData.dates.map(date => {
                                 const day = date.split('-')[2];
-                                return <th key={date} className="p-3 border text-center font-mono min-w-[40px]">{day}</th>;
+                                return <th key={date} className="p-3 border text-center font-mono min-w-[50px] font-bold text-lg">{day}</th>;
                             })}
                         </tr>
                     </thead>
@@ -711,7 +714,7 @@ export default function InventoryApp() {
                                 {monthlyViewData.dates.map(date => {
                                     const val = monthlyViewData.dataByDate[date].stock[p.id];
                                     return (
-                                        <td key={date} className="p-3 border text-center font-mono font-bold text-gray-800">
+                                        <td key={date} className="p-3 border text-center font-mono font-bold text-gray-800 text-lg">
                                             {val}
                                         </td>
                                     );
@@ -728,7 +731,6 @@ export default function InventoryApp() {
         {activeTab === 'max' && (
            <div className="space-y-6 max-w-4xl mx-auto">
              <div className="bg-white p-4 rounded-xl shadow flex flex-wrap items-center justify-between gap-4">
-                {/* Month Picker */}
                 <div className="flex items-center gap-2">
                     <label className="font-bold text-gray-700">請求月:</label>
                     <input type="month" className="border rounded p-2 text-lg"
@@ -740,7 +742,6 @@ export default function InventoryApp() {
                     />
                 </div>
 
-                {/* Global Unit Price Setting */}
                 <div className="flex items-center gap-2 bg-blue-50 p-2 rounded border border-blue-100">
                     <label className="font-bold text-gray-700 text-sm">保管料単価 (一律):</label>
                     {isUnitPriceEditing ? (
@@ -774,9 +775,9 @@ export default function InventoryApp() {
                         <thead className="bg-blue-50 text-blue-800">
                             <tr>
                                 <th className="p-2 border">商品コード/名</th>
-                                <th className="p-2 border text-right">1-10日</th>
-                                <th className="p-2 border text-right">11-20日</th>
-                                <th className="p-2 border text-right">21-末日</th>
+                                <th className="p-2 border text-right">第1期<br/>(1-10)</th>
+                                <th className="p-2 border text-right">第2期<br/>(11-20)</th>
+                                <th className="p-2 border text-right">第3期<br/>(21-末)</th>
                                 <th className="p-2 border text-right font-bold">合計数</th>
                                 <th className="p-2 border text-right">単価</th>
                                 <th className="p-2 border text-right bg-blue-100 font-bold">金額</th>
