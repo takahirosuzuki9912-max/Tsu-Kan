@@ -215,7 +215,7 @@ export default function InventoryApp() {
   const [newProductCodeMain, setNewProductCodeMain] = useState(''); 
   const [newProductCodeSub, setNewProductCodeSub] = useState('');
 
-  // Report State (Month & Term)
+  // Report State
   const currentYear = new Date().getFullYear();
   const currentMonth = new Date().getMonth() + 1;
   const currentDay = new Date().getDate();
@@ -730,7 +730,7 @@ export default function InventoryApp() {
                 <table className="w-full text-left text-base border-collapse whitespace-nowrap">
                     <thead className="bg-gray-100 text-gray-600">
                         <tr>
-                            <th className="p-2 border sticky left-0 bg-gray-100 z-10 w-24 min-w-[6rem] max-w-[6rem] shadow-sm font-bold text-sm break-words whitespace-normal">商品<br/>コード/名</th>
+                            <th className="p-2 border sticky left-0 bg-gray-100 z-10 w-28 min-w-[7rem] max-w-[7rem] shadow-sm font-bold text-sm break-words whitespace-normal">商品<br/>コード/名</th>
                             <th className="p-3 border text-center font-bold bg-blue-50 text-blue-800 min-w-[60px] text-lg">前残</th>
                             {monthlyViewData.dates.map(date => {
                                 const day = date.split('-')[2];
@@ -742,7 +742,7 @@ export default function InventoryApp() {
                     <tbody>
                         {products.map(p => (
                             <tr key={p.id} className="hover:bg-gray-50">
-                                <td className="p-2 border font-bold sticky left-0 bg-white z-10 shadow-sm w-24 min-w-[6rem] max-w-[6rem] whitespace-normal break-words">
+                                <td className="p-2 border font-bold sticky left-0 bg-white z-10 shadow-sm w-28 min-w-[7rem] max-w-[7rem] whitespace-normal break-words">
                                   <div className="flex flex-col">
                                     <span className="text-xs text-gray-500">{p.code}</span>
                                     <span className="text-sm leading-tight">{p.name}</span>
@@ -768,7 +768,7 @@ export default function InventoryApp() {
                     </tbody>
                     <tfoot className="bg-gray-100 font-bold text-gray-800">
                         <tr>
-                            <td className="p-2 border sticky left-0 bg-gray-100 z-10 shadow-sm text-lg w-24">合計</td>
+                            <td className="p-2 border sticky left-0 bg-gray-100 z-10 shadow-sm text-lg w-28">合計</td>
                             <td className="p-3 border text-center font-mono text-xl">{flowTotals.startTotal}</td>
                             {monthlyViewData.dates.map(date => {
                                 const val = flowTotals.dateTotals[date];
@@ -806,7 +806,7 @@ export default function InventoryApp() {
                 <table className="w-full text-left text-base border-collapse whitespace-nowrap">
                     <thead className="bg-gray-100 text-gray-600">
                         <tr>
-                            <th className="p-2 border sticky left-0 bg-gray-100 z-10 w-24 min-w-[6rem] max-w-[6rem] shadow-sm font-bold text-sm break-words whitespace-normal">商品<br/>コード/名</th>
+                            <th className="p-2 border sticky left-0 bg-gray-100 z-10 w-28 min-w-[7rem] max-w-[7rem] shadow-sm font-bold text-sm break-words whitespace-normal">商品<br/>コード/名</th>
                             {monthlyViewData.dates.map(date => {
                                 const day = date.split('-')[2];
                                 return <th key={date} className="p-3 border text-center font-mono min-w-[50px] font-bold text-xl">{day}</th>;
@@ -816,7 +816,7 @@ export default function InventoryApp() {
                     <tbody>
                         {products.map(p => (
                             <tr key={p.id} className="hover:bg-gray-50">
-                                <td className="p-2 border font-bold sticky left-0 bg-white z-10 shadow-sm w-24 min-w-[6rem] max-w-[6rem] whitespace-normal break-words">
+                                <td className="p-2 border font-bold sticky left-0 bg-white z-10 shadow-sm w-28 min-w-[7rem] max-w-[7rem] whitespace-normal break-words">
                                   <div className="flex flex-col">
                                     <span className="text-xs text-gray-500">{p.code}</span>
                                     <span className="text-sm leading-tight">{p.name}</span>
@@ -835,7 +835,7 @@ export default function InventoryApp() {
                     </tbody>
                     <tfoot className="bg-gray-100 font-bold text-gray-800">
                         <tr>
-                            <td className="p-2 border sticky left-0 bg-gray-100 z-10 shadow-sm text-lg w-24">合計</td>
+                            <td className="p-2 border sticky left-0 bg-gray-100 z-10 shadow-sm text-lg w-28">合計</td>
                             {monthlyViewData.dates.map(date => (
                                 <td key={date} className="p-3 border text-center font-mono text-xl">{stockTotals.dateTotals[date]}</td>
                             ))}
