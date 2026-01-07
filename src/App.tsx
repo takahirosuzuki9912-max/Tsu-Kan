@@ -726,22 +726,23 @@ export default function InventoryApp() {
                 </div>
             </div>
             
-            <div className="overflow-x-auto pb-4">
+            {/* Added max-h-[70vh] and overflow-auto for vertical scroll with sticky headers */}
+            <div className="overflow-auto max-h-[70vh] pb-4 border rounded-xl shadow-inner bg-gray-50">
                 <table className="w-full text-left text-base border-collapse whitespace-nowrap">
                     <thead className="bg-gray-100 text-gray-600">
                         <tr>
-                            <th className="p-2 border sticky left-0 bg-gray-100 z-10 w-28 min-w-[7rem] max-w-[7rem] shadow-sm font-bold text-sm break-words whitespace-normal">商品<br/>コード/名</th>
-                            <th className="p-3 border text-center font-bold bg-blue-50 text-blue-800 min-w-[60px] text-lg">前残</th>
+                            <th className="p-2 border sticky left-0 top-0 z-30 bg-gray-100 w-28 min-w-[7rem] max-w-[7rem] shadow-sm font-bold text-sm break-words whitespace-normal">商品<br/>コード/名</th>
+                            <th className="p-3 border text-center font-bold bg-blue-50 text-blue-800 min-w-[60px] text-lg sticky top-0 z-20">前残</th>
                             {monthlyViewData.dates.map(date => {
                                 const day = date.split('-')[2];
-                                return <th key={date} className="p-3 border text-center font-mono min-w-[50px] font-bold text-xl">{day}</th>;
+                                return <th key={date} className="p-3 border text-center font-mono min-w-[50px] font-bold text-xl sticky top-0 z-20 bg-gray-100">{day}</th>;
                             })}
-                            <th className="p-3 border text-center font-bold bg-blue-50 text-blue-800 min-w-[60px] text-lg">現残</th>
+                            <th className="p-3 border text-center font-bold bg-blue-50 text-blue-800 min-w-[60px] text-lg sticky top-0 z-20">現残</th>
                         </tr>
                     </thead>
                     <tbody>
                         {products.map(p => (
-                            <tr key={p.id} className="hover:bg-gray-50">
+                            <tr key={p.id} className="hover:bg-white bg-white">
                                 <td className="p-2 border font-bold sticky left-0 bg-white z-10 shadow-sm w-28 min-w-[7rem] max-w-[7rem] whitespace-normal break-words">
                                   <div className="flex flex-col">
                                     <span className="text-xs text-gray-500">{p.code}</span>
@@ -766,9 +767,9 @@ export default function InventoryApp() {
                             </tr>
                         ))}
                     </tbody>
-                    <tfoot className="bg-gray-100 font-bold text-gray-800">
+                    <tfoot className="bg-gray-100 font-bold text-gray-800 sticky bottom-0 z-20">
                         <tr>
-                            <td className="p-2 border sticky left-0 bg-gray-100 z-10 shadow-sm text-lg w-28">合計</td>
+                            <td className="p-2 border sticky left-0 bottom-0 bg-gray-100 z-30 shadow-sm text-lg w-28">合計</td>
                             <td className="p-3 border text-center font-mono text-xl">{flowTotals.startTotal}</td>
                             {monthlyViewData.dates.map(date => {
                                 const val = flowTotals.dateTotals[date];
@@ -802,20 +803,20 @@ export default function InventoryApp() {
                 </div>
             </div>
 
-            <div className="overflow-x-auto pb-4">
+            <div className="overflow-auto max-h-[70vh] pb-4 border rounded-xl shadow-inner bg-gray-50">
                 <table className="w-full text-left text-base border-collapse whitespace-nowrap">
                     <thead className="bg-gray-100 text-gray-600">
                         <tr>
-                            <th className="p-2 border sticky left-0 bg-gray-100 z-10 w-28 min-w-[7rem] max-w-[7rem] shadow-sm font-bold text-sm break-words whitespace-normal">商品<br/>コード/名</th>
+                            <th className="p-2 border sticky left-0 top-0 z-30 bg-gray-100 w-28 min-w-[7rem] max-w-[7rem] shadow-sm font-bold text-sm break-words whitespace-normal">商品<br/>コード/名</th>
                             {monthlyViewData.dates.map(date => {
                                 const day = date.split('-')[2];
-                                return <th key={date} className="p-3 border text-center font-mono min-w-[50px] font-bold text-xl">{day}</th>;
+                                return <th key={date} className="p-3 border text-center font-mono min-w-[50px] font-bold text-xl sticky top-0 z-20 bg-gray-100">{day}</th>;
                             })}
                         </tr>
                     </thead>
                     <tbody>
                         {products.map(p => (
-                            <tr key={p.id} className="hover:bg-gray-50">
+                            <tr key={p.id} className="hover:bg-white bg-white">
                                 <td className="p-2 border font-bold sticky left-0 bg-white z-10 shadow-sm w-28 min-w-[7rem] max-w-[7rem] whitespace-normal break-words">
                                   <div className="flex flex-col">
                                     <span className="text-xs text-gray-500">{p.code}</span>
@@ -833,9 +834,9 @@ export default function InventoryApp() {
                             </tr>
                         ))}
                     </tbody>
-                    <tfoot className="bg-gray-100 font-bold text-gray-800">
+                    <tfoot className="bg-gray-100 font-bold text-gray-800 sticky bottom-0 z-20">
                         <tr>
-                            <td className="p-2 border sticky left-0 bg-gray-100 z-10 shadow-sm text-lg w-28">合計</td>
+                            <td className="p-2 border sticky left-0 bottom-0 bg-gray-100 z-30 shadow-sm text-lg w-28">合計</td>
                             {monthlyViewData.dates.map(date => (
                                 <td key={date} className="p-3 border text-center font-mono text-xl">{stockTotals.dateTotals[date]}</td>
                             ))}
@@ -889,20 +890,22 @@ export default function InventoryApp() {
                 <h2 className="text-lg font-bold mb-4 flex items-center gap-2 text-gray-700">
                     <ShieldCheck className="text-blue-600" /> 最大在庫計算・請求内訳
                 </h2>
-                <div className="overflow-x-auto">
+                
+                {/* Updated Invoice Table with Sticky Headers */}
+                <div className="overflow-auto max-h-[70vh] border rounded-xl shadow-inner bg-gray-50">
                     <table className="w-full text-left text-base border-collapse">
                         <thead className="bg-blue-50 text-blue-800">
                             <tr>
-                                <th className="p-3 border text-lg">商品コード/名</th>
-                                <th className="p-3 border text-right text-lg">第1期<br/>(1-10)</th>
-                                <th className="p-3 border text-right text-lg">第2期<br/>(11-20)</th>
-                                <th className="p-3 border text-right text-lg">第3期<br/>(21-末)</th>
-                                <th className="p-3 border text-right font-bold text-lg">合計数</th>
-                                <th className="p-3 border text-right text-lg">単価</th>
-                                <th className="p-3 border text-right bg-blue-100 font-bold text-lg">金額</th>
+                                <th className="p-3 border text-lg sticky top-0 z-20 bg-blue-50">商品コード/名</th>
+                                <th className="p-3 border text-right text-lg sticky top-0 z-20 bg-blue-50">第1期<br/>(1-10)</th>
+                                <th className="p-3 border text-right text-lg sticky top-0 z-20 bg-blue-50">第2期<br/>(11-20)</th>
+                                <th className="p-3 border text-right text-lg sticky top-0 z-20 bg-blue-50">第3期<br/>(21-末)</th>
+                                <th className="p-3 border text-right font-bold text-lg sticky top-0 z-20 bg-blue-50">合計数</th>
+                                <th className="p-3 border text-right text-lg sticky top-0 z-20 bg-blue-50">単価</th>
+                                <th className="p-3 border text-right bg-blue-100 font-bold text-lg sticky top-0 z-20">金額</th>
                             </tr>
                         </thead>
-                        <tbody>
+                        <tbody className="bg-white">
                             {products.map(p => {
                                 const d = maxStockData[p.id];
                                 const totalQty = d.term1 + d.term2 + d.term3;
@@ -927,7 +930,7 @@ export default function InventoryApp() {
                                 );
                             })}
                         </tbody>
-                        <tfoot className="bg-blue-100 font-bold text-blue-900">
+                        <tfoot className="bg-blue-100 font-bold text-blue-900 sticky bottom-0 z-20">
                             <tr>
                                 <td className="p-3 border text-lg">合計</td>
                                 <td className="p-3 border text-right text-xl">{maxStockTotals.term1Total}</td>
